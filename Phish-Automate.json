@@ -1,0 +1,512 @@
+{
+  "name": "Phish-Automate",
+  "nodes": [
+    {
+      "parameters": {
+        "postProcessAction": "=read",
+        "format": "resolved",
+        "dataPropertyAttachmentsPrefixName": "=attachment_",
+        "options": {
+          "forceReconnect": 5,
+          "trackLastMessageId": true
+        }
+      },
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2.1,
+      "position": [
+        -1760,
+        208
+      ],
+      "id": "b7d93d9e-c0b0-4bf6-96b2-8b57d8c38b8a",
+      "name": "Email Trigger (IMAP)",
+      "credentials": {
+        "imap": {
+          "id": "GFQYx5znOPpRo0Ag",
+          "name": "IMAP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $json.id }}",
+        "labelIds": [
+          "Label_2510601152393272476"
+        ]
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        480,
+        0
+      ],
+      "id": "be4151b8-fde0-4df9-b79d-0cf3c5b84a04",
+      "name": "Add label to suspicious message",
+      "webhookId": "7e8a1f41-c512-44c7-b05b-45c6049dab09",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "c2mt9o02IEnJMHMX",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true,
+        "filters": {
+          "q": "=rfc822msgid:{{$json[\"message_id\"]}}"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        208,
+        192
+      ],
+      "id": "886ed03d-5e82-4391-a563-58a9ac22fa38",
+      "name": "Get not suspicious messages",
+      "webhookId": "98843432-5842-4638-bb12-c70fb3401626",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "c2mt9o02IEnJMHMX",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true,
+        "filters": {
+          "q": "=rfc822msgid:{{$json[\"message_id\"]}}"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        208,
+        0
+      ],
+      "id": "03bd4cac-a7b3-42f6-895f-a47b8316a339",
+      "name": "Get suspicious messages",
+      "webhookId": "b1c49e31-16a9-405a-a723-e1b3dfb0965d",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "c2mt9o02IEnJMHMX",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $json.id }}",
+        "labelIds": [
+          "Label_8659733729927092188"
+        ]
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        480,
+        192
+      ],
+      "id": "35ef1fb4-90fb-486e-8229-69f6676a2b3a",
+      "name": "Add not suspicious label to message",
+      "webhookId": "7e8a1f41-c512-44c7-b05b-45c6049dab09",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "c2mt9o02IEnJMHMX",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://phishing-detection-api.kentharold.space/api/emails",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -624,
+        208
+      ],
+      "id": "ed389ed2-cdd6-49e1-98f3-f42526b11802",
+      "name": "ANALYZE"
+    },
+    {
+      "parameters": {
+        "jsCode": "function extractEmail(data) {\n  let email = null;\n\n  // 1. Try 'sender' field first (highest priority)\n  if (data.sender) {\n    const match = data.sender.match(/<([^>]+)>/);\n    if (match) {\n      email = match[1].trim();\n    } else {\n      const emailOnly = data.sender.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-z]{2,}/);\n      if (emailOnly) email = emailOnly[0];\n    }\n  }\n\n  // 2. Then try 'from' header\n  if (!email && data.from) {\n    const match = data.from.match(/<([^>]+)>/);\n    if (match) {\n      email = match[1].trim();\n    } else {\n      const emailOnly = data.from.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-z]{2,}/);\n      if (emailOnly) email = emailOnly[0];\n    }\n  }\n\n  // 3. Fallback to Return-Path header\n  if (!email && data[\"return-path\"]) {\n    const match = data[\"return-path\"].match(/<([^>]+)>/);\n    if (match) email = match[1].trim();\n  }\n\n  // 4. Fallback to Authentication-Results\n  if (!email && data[\"authentication-results\"]) {\n    const match = data[\"authentication-results\"].match(/smtp\\.mailfrom=([^;\\s]+)/i);\n    if (match) email = match[1].trim();\n  }\n\n  // 5. Fallback to SPF header\n  if (!email && data[\"received-spf\"]) {\n    const match = data[\"received-spf\"].match(/domain of ([^ ]+)/i);\n    if (match) email = match[1].trim();\n  }\n\n  return email || 'unknown';\n}\n\nfunction extractMessageId(data) {\n  let raw = null;\n\n  // Check if message-id exists directly\n  if (data[\"message-id\"]) {\n    raw = data[\"message-id\"];\n  }\n  // Otherwise, check if it's inside headers\n  else if (data.headers) {\n    for (const key of Object.keys(data.headers)) {\n      if (key.toLowerCase() === \"message-id\") {\n        raw = data.headers[key];\n        break;\n      }\n    }\n  }\n\n  if (!raw) return null;\n\n  // Extract inside <...>\n  const match = raw.match(/<([^>]+)>/);\n  if (match) return match[1].trim();\n\n  // Clean prefix if present\n  return raw.replace(/^Message-ID:\\s*/i, '').trim() || null;\n}\n\nfunction analyzeThreatIntelligence(data) {\n  const threatSummary = data.threat_summary || {};\n  const detailedAnalysis = data.detailed_analysis || {};\n  const ctiFlags = data.cti_flags || [];\n\n  // Enhanced verdict logic using new detailed analysis\n  let verdict = 'clean';\n  let riskLevel = 'low';\n  let confidence = threatSummary.confidence || 'unknown';\n  let reasoning = [];\n\n  // Check overall risk from threat summary\n  if (threatSummary.overall_risk === 'high') {\n    verdict = 'malicious';\n    riskLevel = 'high';\n    reasoning.push('High overall risk detected');\n  } else if (threatSummary.overall_risk === 'medium') {\n    verdict = 'suspicious';\n    riskLevel = 'medium';\n    reasoning.push('Medium overall risk detected');\n  }\n\n  // Check for malicious flags\n  const maliciousFlags = ctiFlags.filter(flag => flag.toLowerCase().includes('malicious'));\n  if (maliciousFlags.length > 0) {\n    verdict = verdict === 'malicious' ? 'malicious' : 'suspicious';\n    reasoning.push(`Malicious indicators: ${maliciousFlags.join(', ')}`);\n  }\n\n  // Check detailed domain analysis\n  const domains = detailedAnalysis.domains || {};\n  for (const [domain, analysis] of Object.entries(domains)) {\n    if (analysis.threat_level === 'high') {\n      verdict = 'malicious';\n      riskLevel = 'high';\n      reasoning.push(`Domain ${domain} has high threat level (${analysis.malicious_engines?.length || 0} malicious engines)`);\n    } else if (analysis.threat_level === 'medium' && verdict === 'clean') {\n      verdict = 'suspicious';\n      riskLevel = 'medium';\n      reasoning.push(`Domain ${domain} has medium threat level`);\n    }\n\n    if (analysis.reputation_score < 30) {\n      reasoning.push(`Domain ${domain} has low reputation (${analysis.reputation_score})`);\n    }\n  }\n\n  // Check detailed IP analysis\n  const ips = detailedAnalysis.ips || {};\n  for (const [ip, analysis] of Object.entries(ips)) {\n    if (analysis.threat_level === 'high') {\n      verdict = 'malicious';\n      riskLevel = 'high';\n      reasoning.push(`IP ${ip} has high threat level (${analysis.malicious_engines?.length || 0} malicious engines)`);\n    } else if (analysis.threat_level === 'medium' && verdict === 'clean') {\n      verdict = 'suspicious';\n      riskLevel = 'medium';\n      reasoning.push(`IP ${ip} has medium threat level`);\n    }\n\n    if (analysis.reputation_score < 30) {\n      reasoning.push(`IP ${ip} has low reputation (${analysis.reputation_score})`);\n    }\n  }\n\n  // Check phishing score as fallback\n  if (data.phishing_score_cti > 0.7 && verdict === 'clean') {\n    verdict = 'suspicious';\n    reasoning.push(`High phishing score: ${data.phishing_score_cti}`);\n  }\n\n  return {\n    verdict,\n    risk_level: riskLevel,\n    confidence,\n    reasoning: reasoning.length > 0 ? reasoning : ['No significant threats detected'],\n    threat_details: {\n      malicious_domains: Object.entries(domains).filter(([_, analysis]) => analysis.threat_level === 'high').length,\n      malicious_ips: Object.entries(ips).filter(([_, analysis]) => analysis.threat_level === 'high').length,\n      suspicious_domains: Object.entries(domains).filter(([_, analysis]) => analysis.threat_level === 'medium').length,\n      suspicious_ips: Object.entries(ips).filter(([_, analysis]) => analysis.threat_level === 'medium').length,\n      total_analyzed: threatSummary.total_analyzed || 0,\n      average_reputation: threatSummary.average_reputation || 0\n    }\n  };\n}\n\nreturn items.map(item => {\n  const data = item.json;\n  const senderEmail = extractEmail(data);\n  const messageId = extractMessageId(data);\n\n  // Use enhanced threat intelligence analysis\n  const threatAnalysis = analyzeThreatIntelligence(data);\n\n  return {\n    json: {\n      email: senderEmail,\n      subject: data.subject || 'No Subject',\n      verdict: threatAnalysis.verdict,\n      risk_level: threatAnalysis.risk_level,\n      confidence: threatAnalysis.confidence,\n      reasoning: threatAnalysis.reasoning,\n      threat_details: threatAnalysis.threat_details,\n      message_id: messageId,\n      sender_domain: data.sender_domain || null,\n      phishing_score_cti: data.phishing_score_cti || 0,\n      cti_flags: data.cti_flags || [],\n      // Include detailed analysis for advanced workflows\n      detailed_domains: data.detailed_analysis?.domains || {},\n      detailed_ips: data.detailed_analysis?.ips || {},\n      threat_summary: data.threat_summary || {}\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -416,
+        208
+      ],
+      "id": "dc5d65b5-a213-4b5b-990d-ee00bc9ac552",
+      "name": "ADD verdict"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "e2307ed1-5ac4-476d-b16e-fbfc8c64f032",
+              "leftValue": "={{ $json.verdict }}",
+              "rightValue": "=suspicious",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "38e4b038-9223-4f3c-8387-6b51932fc079",
+              "leftValue": "={{ $json.verdict }}",
+              "rightValue": "malicious",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -192,
+        16
+      ],
+      "id": "02feacbb-223f-49ff-a7c4-f5ecd14da36f",
+      "name": "CHECK VERDICT"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "e2307ed1-5ac4-476d-b16e-fbfc8c64f032",
+              "leftValue": "={{ $json.verdict }}",
+              "rightValue": "=malicious",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -192,
+        432
+      ],
+      "id": "e275c327-7244-48b9-aee8-06ba1381d34b",
+      "name": "CHECK VERDICT1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "e2307ed1-5ac4-476d-b16e-fbfc8c64f032",
+              "leftValue": "={{ $json.verdict }}",
+              "rightValue": "=clean",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -192,
+        208
+      ],
+      "id": "884cedeb-3761-4e68-aa89-9956166fbce8",
+      "name": "CHECK VERDICT2"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true,
+        "filters": {
+          "q": "=rfc822msgid:{{$json[\"message_id\"]}}"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        208,
+        416
+      ],
+      "id": "8614bb4f-ced6-41fd-adbc-36eca7ec5eb3",
+      "name": "Get malicious messages",
+      "webhookId": "98843432-5842-4638-bb12-c70fb3401626",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "c2mt9o02IEnJMHMX",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $json.id }}",
+        "labelIds": [
+          "Label_7413421566338675829"
+        ]
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        480,
+        416
+      ],
+      "id": "4f73c7cc-bb11-4258-a66c-cc71282f624d",
+      "name": "Add malicious label to message",
+      "webhookId": "7e8a1f41-c512-44c7-b05b-45c6049dab09",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "c2mt9o02IEnJMHMX",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item => ({\n  json: {\n    rawEmail: {\n      ...item.json,\n      binary: item.binary\n    }\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -976,
+        208
+      ],
+      "id": "cc2eff91-4ad6-4e19-9f69-6d0021ca2336",
+      "name": "Add them to rawEmail OBJECT"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "nesiFjydrhSqC4zd",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/nesiFjydrhSqC4zd",
+          "cachedResultName": "blocked email"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {}
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        -1552,
+        208
+      ],
+      "id": "ecef2c8b-e487-4afd-a314-2bd42cc25d07",
+      "name": "Call 'blocked email'",
+      "alwaysOutputData": true
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Email Trigger (IMAP)": {
+      "main": [
+        [
+          {
+            "node": "Call 'blocked email'",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get not suspicious messages": {
+      "main": [
+        [
+          {
+            "node": "Add not suspicious label to message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get suspicious messages": {
+      "main": [
+        [
+          {
+            "node": "Add label to suspicious message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ANALYZE": {
+      "main": [
+        [
+          {
+            "node": "ADD verdict",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ADD verdict": {
+      "main": [
+        [
+          {
+            "node": "CHECK VERDICT",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "CHECK VERDICT1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "CHECK VERDICT2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CHECK VERDICT": {
+      "main": [
+        [
+          {
+            "node": "Get suspicious messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CHECK VERDICT1": {
+      "main": [
+        [
+          {
+            "node": "Get malicious messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CHECK VERDICT2": {
+      "main": [
+        [
+          {
+            "node": "Get not suspicious messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get malicious messages": {
+      "main": [
+        [
+          {
+            "node": "Add malicious label to message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add them to rawEmail OBJECT": {
+      "main": [
+        [
+          {
+            "node": "ANALYZE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call 'blocked email'": {
+      "main": [
+        [
+          {
+            "node": "Add them to rawEmail OBJECT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "2018945c-d2a2-4e22-a0a1-9326a160eeb0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "83ded519022c15edef26efa05ee1152a5edfcef7797475970d734486c4c75e57"
+  },
+  "id": "OKGC9wDCRPhLmZRh",
+  "tags": [
+    {
+      "updatedAt": "2025-11-01T12:09:47.588Z",
+      "createdAt": "2025-11-01T12:09:47.588Z",
+      "id": "sn2cPG2SRG6q1ZzS",
+      "name": "soc"
+    }
+  ]
+}

@@ -1,0 +1,333 @@
+{
+  "name": "blocked email",
+  "nodes": [
+    {
+      "parameters": {
+        "url": "https://phishing-detection-api.kentharold.space/api/emails/blocked",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -336,
+        0
+      ],
+      "id": "6cb70309-c523-41b5-8d0d-6330c6c047d9",
+      "name": "HTTP Request",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  // Get \"from\" field (can be nested or plain)\n  const fromField = item.json.from?.text || item.json.from || \"\";\n  const fromString = typeof fromField === \"string\" ? fromField : JSON.stringify(fromField);\n\n  // Extract sender email (inside < >)\n  const match = fromString.match(/<([^>]+)>/);\n  const senderEmail = match ? match[1].trim() : fromString.trim();\n\n  // Extract messageId\n  const messageId = item.json.messageId || item.json.attributes?.messageId || null;\n\n  return {\n    json: {\n      sender_email: senderEmail,\n      messageId: messageId\n    }\n  };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -640,
+        160
+      ],
+      "id": "9994889a-5c0b-46f1-8a3b-81e79b5e57b9",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "jsCode": "if (!items.length) {\n  return [{ json: {} }];\n}\n\nreturn [{\n  json: {\n    blockedSenders: items.map(item => item.json.sender_email)\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -128,
+        0
+      ],
+      "id": "512068cc-489a-4379-9ad3-4cc848abd5f6",
+      "name": "Code in JavaScript1",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        368,
+        64
+      ],
+      "id": "f2aef525-ae86-41eb-bd68-da3ccdaa2594",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -1008,
+        64
+      ],
+      "id": "b033ef00-f345-428c-87a4-a4a035689b5c",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -640,
+        -16
+      ],
+      "id": "17d2383f-023f-49a7-a184-cf7f00451081",
+      "name": "Code in JavaScript2"
+    },
+    {
+      "parameters": {
+        "jsCode": "return {\n  json: {\n    emailData: items.map(item => ({\n      sender_email: item.json.sender_email,\n      messageId: item.json.messageId\n    }))\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -128,
+        176
+      ],
+      "id": "048f28ae-0c0b-45de-b2de-b7cc4012080f",
+      "name": "Code in JavaScript3"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get blocked senders and email data\nconst blockedSenders = items[0].json.blockedSenders;\nconst emailData = items[1].json.emailData;\n\n// Compare and filter messageIds where sender is blocked\nconst blockedMessageIds = emailData\n  .filter(email => blockedSenders.includes(email.sender_email))\n  .map(email => email.messageId);\n\n// Return result\nreturn [\n  {\n    json: {\n      blockedMessageIds\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        736,
+        64
+      ],
+      "id": "68fe5a82-1bc6-4424-8b57-dfe6e19f23b6",
+      "name": "Code in JavaScript5",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "return items;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1008,
+        304
+      ],
+      "id": "52ea850f-c4df-4128-8478-c0515559a8f3",
+      "name": "Code in JavaScript7"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "returnAll": true,
+        "filters": {
+          "q": "=rfc822msgid:{{ $json.blockedMessageIds[0].replace(/[<>]/g, '') }}"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1024,
+        64
+      ],
+      "id": "dc61526d-22af-4f85-9823-16b8c09bdc3b",
+      "name": "Get blocked email",
+      "webhookId": "98843432-5842-4638-bb12-c70fb3401626",
+      "alwaysOutputData": false,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "c2mt9o02IEnJMHMX",
+          "name": "Gmail account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "removeLabels",
+        "messageId": "={{ $json.id }}",
+        "labelIds": [
+          "INBOX"
+        ]
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1232,
+        64
+      ],
+      "id": "2ef2d243-aa88-486d-87fe-7e475c23d389",
+      "name": "remove INBOX label",
+      "webhookId": "7e8a1f41-c512-44c7-b05b-45c6049dab09",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "c2mt9o02IEnJMHMX",
+          "name": "Gmail account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $json.id }}",
+        "labelIds": [
+          "Label_5433025368357442725"
+        ]
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1424,
+        64
+      ],
+      "id": "408026c0-dec6-45d2-b13f-06c38331578d",
+      "name": "Add blocked label",
+      "webhookId": "7e8a1f41-c512-44c7-b05b-45c6049dab09",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "c2mt9o02IEnJMHMX",
+          "name": "Gmail account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Code in JavaScript7",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript3": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript5": {
+      "main": [
+        [
+          {
+            "node": "Get blocked email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get blocked email": {
+      "main": [
+        [
+          {
+            "node": "remove INBOX label",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "remove INBOX label": {
+      "main": [
+        [
+          {
+            "node": "Add blocked label",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "cf697a2f-fb32-4b31-8109-1a43deb5e290",
+  "meta": {
+    "instanceId": "83ded519022c15edef26efa05ee1152a5edfcef7797475970d734486c4c75e57"
+  },
+  "id": "nesiFjydrhSqC4zd",
+  "tags": []
+}
