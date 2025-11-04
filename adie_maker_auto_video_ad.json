@@ -1,0 +1,385 @@
+{
+  "name": "AdieMaker: Auto Video Ad Generator (FIXED v1.117.3)",
+  "nodes": [
+    {
+      "parameters": {
+        "updateFields": {},
+        "options": {}
+      },
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1,
+      "position": [250, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.message.text }}",
+              "operation": "equal",
+              "value2": "/start"
+            }
+          ]
+        }
+      },
+      "name": "If /start?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [520, 200]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.message.chat.id }}",
+        "text": "Welcome to **AdieMaker**!\n\nSend me your *ad idea* and I’ll make a **video ad**.\n\nExamples:\n• \"Energy drink, 15s, fast visuals\"\n• \"Coding course, happy students\"\n\nJust send your idea!"
+      },
+      "name": "Send Welcome",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [780, 120]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": false,
+        "values": {
+          "string": [
+            {
+              "name": "userPrompt",
+              "value": "={{ $json.message.text }}"
+            },
+            {
+              "name": "chatId",
+              "value": "={{ $json.message.chat.id }}"
+            }
+          ]
+        }
+      },
+      "name": "Preserve Prompt",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [650, 280]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "Processing your prompt — generating script, visuals, and voice-over..."
+      },
+      "name": "Ack User",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [780, 280]
+    },
+    {
+      "parameters": {
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={{ $env.GEMINI_API_KEY }}",
+        "requestMethod": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": "={\n  \"contents\": [{\n    \"parts\": [{\n      \"text\": \"Generate a short, catchy 1-paragraph ad script (max 60 words) and a 1-sentence visual description for this idea:\\n\\n{{ $json.userPrompt }}\\n\\nReturn ONLY valid JSON: {\\\"script\\\": \\\"...\\\", \\\"visuals\\\": \\\"...\\\"}\"\n    }]\n  }],\n  \"generationConfig\": {\n    \"maxOutputTokens\": 256\n  }\n}"
+      },
+      "name": "Gemini - Generate Script",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [1040, 280]
+    },
+    {
+      "parameters": {
+        "functionCode": "const text = $input.first().json.candidates?.[0]?.content?.parts?.[0]?.text || '';\nlet parsed;\ntry {\n  parsed = JSON.parse(text.trim());\n} catch (e) {\n  parsed = { script: 'Amazing!', visuals: $json.userPrompt };\n}\nreturn [{ json: { ...parsed, userPrompt: $json.userPrompt, chatId: $json.chatId } }];"
+      },
+      "name": "Parse Script",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1200, 280]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.pexels.com/v1/search?query={{ encodeURIComponent($json.visuals || $json.userPrompt) }}&per_page=1&orientation=portrait",
+        "requestMethod": "GET",
+        "headerParametersJson": "={\n  \"Authorization\": \"{{ $env.PEXELS_API_KEY }}\"\n}"
+      },
+      "name": "Pexels - Fetch Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [1360, 280]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.photos[0].src.large }}",
+        "responseFormat": "file",
+        "download": true,
+        "binaryPropertyName": "image",
+        "options": {}
+      },
+      "name": "Download Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [1520, 280]
+    },
+    {
+      "parameters": {
+        "url": "https://api.elevenlabs.io/v1/voices",
+        "requestMethod": "GET",
+        "headerParametersJson": "={\n  \"xi-api-key\": \"{{ $env.ELEVENLABS_API_KEY }}\"\n}"
+      },
+      "name": "Get Voices",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [1680, 280]
+    },
+    {
+      "parameters": {
+        "functionCode": "const voices = $input.first().json.voices || [];\nif (voices.length === 0) throw new Error('No voices');\nconst random = voices[Math.floor(Math.random() * voices.length)];\nreturn [{ json: { ...$input.first().json, voice_id: random.voice_id, userPrompt: $json.userPrompt, chatId: $json.chatId } }];"
+      },
+      "name": "Pick Random Voice",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1840, 280]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.elevenlabs.io/v1/text-to-speech/{{ $json.voice_id }}?output_format=mp3_44100_128",
+        "requestMethod": "POST",
+        "responseFormat": "file",
+        "download": true,
+        "binaryPropertyName": "audio",
+        "jsonParameters": true,
+        "bodyParametersJson": "={\n  \"text\": \"{{ $json.script }}\",\n  \"voice_settings\": { \"stability\": 0.7, \"similarity_boost\": 0.8 }\n}",
+        "headerParametersJson": "={\n  \"xi-api-key\": \"{{ $env.ELEVENLABS_API_KEY }}\",\n  \"Content-Type\": \"application/json\"\n}"
+      },
+      "name": "ElevenLabs - TTS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [2000, 280]
+    },
+    {
+      "parameters": {
+        "command": "bash -lc \"IMG={{ $binary.image.filePath }}; AUDIO={{ $binary.audio.filePath }}; OUT=/tmp/final_{{ $execution.id }}.mp4; ffmpeg -y -loop 1 -i \\\"$IMG\\\" -i \\\"$AUDIO\\\" -vf \\\"scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,zoompan=z='min(zoom+0.0005,1.1)':s=1080x1920:d=150,drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='{{ $json.script }}':fontcolor=white:fontsize=48:x=(w-text_w)/2:y=h-250:enable='between(t,1,10)':box=1:boxcolor=black@0.5:boxborderw=8\\\" -c:v libx264 -c:a aac -b:a 192k -shortest \\\"$OUT\\\" && echo $OUT\""
+      },
+      "name": "FFmpeg - Assemble",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [2280, 280]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { finalVideoPath: $input.first().json.stdout.trim(), userPrompt: $json.userPrompt, chatId: $json.chatId } }];"
+      },
+      "name": "Capture Output Path",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [2320, 280]
+    },
+    {
+      "parameters": {
+        "filePath": "={{ $json.finalVideoPath }}",
+        "binaryPropertyName": "video"
+      },
+      "name": "Read Final Video",
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
+      "position": [2400, 280]
+    },
+    {
+      "parameters": {
+        "operation": "sendDocument",
+        "chatId": "={{ $json.chatId }}",
+        "document": "={{ $binary.video.filePath }}",
+        "caption": "Your **AdieMaker** video ad is ready!\n\n*Prompt:* {{ $json.userPrompt }}\n\nMade with AI script, visuals, voice & animation.",
+        "parseMode": "Markdown",
+        "additionalFields": {
+          "mime_type": "video/mp4"
+        }
+      },
+      "name": "Send Video",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [2560, 280]
+    },
+    {
+      "parameters": {
+        "command": "bash -lc \"rm -f '{{ $json.finalVideoPath }}' '{{ $binary.image.filePath }}' '{{ $binary.audio.filePath }}' 2>/dev/null || true\""
+      },
+      "name": "Cleanup",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [2840, 280]
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "If /start?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If /start?": {
+      "main": [
+        [
+          {
+            "node": "Send Welcome",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preserve Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preserve Prompt": {
+      "main": [
+        [
+          {
+            "node": "Ack User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ack User": {
+      "main": [
+        [
+          {
+            "node": "Gemini - Generate Script",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini - Generate Script": {
+      "main": [
+        [
+          {
+            "node": "Parse Script",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Script": {
+      "main": [
+        [
+          {
+            "node": "Pexels - Fetch Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pexels - Fetch Image": {
+      "main": [
+        [
+          {
+            "node": "Download Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Image": {
+      "main": [
+        [
+          {
+            "node": "Get Voices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Voices": {
+      "main": [
+        [
+          {
+            "node": "Pick Random Voice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Random Voice": {
+      "main": [
+        [
+          {
+            "node": "ElevenLabs - TTS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ElevenLabs - TTS": {
+      "main": [
+        [
+          {
+            "node": "FFmpeg - Assemble",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FFmpeg - Assemble": {
+      "main": [
+        [
+          {
+            "node": "Capture Output Path",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Capture Output Path": {
+      "main": [
+        [
+          {
+            "node": "Read Final Video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Final Video": {
+      "main": [
+        [
+          {
+            "node": "Send Video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Video": {
+      "main": [
+        [
+          {
+            "node": "Cleanup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": "adiemaker-fixed-v1.117.3",
+  "versionId": 1
+}
